@@ -3,6 +3,7 @@ package v1;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Scanner;
 
 public class Repl {
 	public static void main(String[] args) {
@@ -24,8 +25,9 @@ public class Repl {
 		
 		AstProgram program = new AstProgram();
 		program.commands = parser.parseCommand();
-		
+		GlobalEnv globalEnv = new GlobalEnv();
 		Evaluator evaluator = new Evaluator();
+		evaluator.globalEnv = globalEnv;
 		Environment env = new Environment();
 		Obj evaluated = evaluator.Eval(program, env);
 		
@@ -46,6 +48,35 @@ public class Repl {
 	}
 	
 	private static void startRepl() {
+		Scanner scanner = new Scanner(System.in);
+		String input = "";
+		
+		GlobalEnv globalEnv = new GlobalEnv();
+		Environment env = new Environment();
+		Evaluator evaluator = new Evaluator();
+		evaluator.globalEnv = globalEnv;
 
+		System.out.println("Wellcome to Foxship, the Command Based Language!");
+		while (true) {
+			System.out.print(">> ");
+			input = scanner.nextLine();
+			if (!input.isEmpty()) {				
+				if (input.equals("quit")) {
+					break;
+				}
+
+				Tokenizer tokenizer = new Tokenizer(input);
+				Parser parser = new Parser(tokenizer);
+				
+				AstProgram program = new AstProgram();
+				program.commands = parser.parseCommand();
+				Obj evaluated = evaluator.Eval(program, env);
+				
+				if (evaluated != null) {
+					System.out.println(evaluated.inspect());
+				}			
+			}
+		}
+		scanner.close();
 	}
 }

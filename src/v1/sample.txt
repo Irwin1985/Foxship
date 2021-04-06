@@ -2,16 +2,21 @@
 //CREATE CONNECTION MyCon FROM FILE "C:\MyCon.dbc"
 
 // extended syntax
-CREATE CONNECTION MyCon ENGINE "MySQL" SERVER "localhost" PORT "3306" DATABASE "test" USER "root" PASSWORD "1234"	
+CREATE CONNECTION MyCon ENGINE "MySQL" SERVER "localhost" PORT "3306" DATABASE "classicmodels" USER "root" PASSWORD "1234"	
 
 // specify the connection
-SET CONNECTION TO MyCon
+//SET CONNECTION TO MyCon
 
 // open table
 
-//USE Customer IN 0
+USE Customer
 
-//BROWSE
+BROWSE
+scan
+	replace nombre with "pepe"
+endscan
+
+// termine
 
 // close connection
 CLOSE CONNECTION MyCon

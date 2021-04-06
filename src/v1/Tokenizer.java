@@ -8,6 +8,7 @@ public class Tokenizer {
 	private int pos = 0;
 	private char currentChar = NONE;
 	private Map<String, TokenType> keywords;
+	private Map<String, TokenType> singleChars;
 	private TokenType lastType = TokenType.EOF;
 	
 	Tokenizer(String source) {
@@ -29,6 +30,33 @@ public class Tokenizer {
 		keywords.put("USE", TokenType.USE);
 		keywords.put("BROWSE", TokenType.BROWSE);
 		keywords.put("CLOSE", TokenType.CLOSE);
+		keywords.put("ALIAS", TokenType.ALIAS);
+		keywords.put("NODATA", TokenType.NODATA);
+		keywords.put("NOUPDATE", TokenType.NOUPDATE);
+		keywords.put("FILTER", TokenType.FILTER);
+		keywords.put("IN", TokenType.IN);
+		keywords.put("SELECT", TokenType.SELECT);
+		keywords.put("TITLE", TokenType.TITLE);
+		keywords.put("MESSAGEBOX", TokenType.MESSAGEBOX);
+		keywords.put("AND", TokenType.AND);
+		keywords.put("OR", TokenType.OR);
+		keywords.put("TRUE", TokenType.TRUE);
+		keywords.put("FALSE", TokenType.FALSE);
+		keywords.put("NULL", TokenType.NULL);
+		keywords.put("GO", TokenType.GO);
+		keywords.put("RECNO", TokenType.RECNO);
+		keywords.put("SKIP", TokenType.SKIP);
+		// Single digit characters
+		singleChars = new HashMap<String, TokenType>();
+		singleChars.put(".", TokenType.DOT);
+		singleChars.put(",", TokenType.COMMA);
+		singleChars.put("(", TokenType.LPAREN);
+		singleChars.put(")", TokenType.RPAREN);
+		singleChars.put("+", TokenType.PLUS);
+		singleChars.put("-", TokenType.MINUS);
+		singleChars.put("*", TokenType.MUL);
+		singleChars.put("/", TokenType.DIV);
+		singleChars.put("=", TokenType.ASSIGN);
 	}
 	
 	private Token newToken(TokenType type, String lexeme) {
@@ -143,6 +171,38 @@ public class Tokenizer {
 			if (currentChar == '"') {
 				return getString();
 			}
+			//< double digit length characters
+			if (currentChar == '<') {
+				advance();
+				if (currentChar == '=') {
+					advance();
+					return newToken(TokenType.LESS_EQ, "<=");
+				}
+				return newToken(TokenType.LESS, "<");
+			}
+			if (currentChar == '>') {
+				advance();
+				if (currentChar == '=') {
+					advance();
+					return newToken(TokenType.GREATER_EQ, ">=");
+				}
+				return newToken(TokenType.GREATER, ">");
+			}
+			if (currentChar == '!') {
+				advance();
+				if (currentChar == '=') {
+					advance();
+					return newToken(TokenType.NOT_EQ, "!=");
+				}
+				return newToken(TokenType.NOT, "!");
+			}
+			//< double digit length characters
+			TokenType tokenType = singleChars.get(currentChar + "");
+			if (tokenType != null) {
+				advance();
+				return newToken(tokenType, currentChar + "");
+			}
+			
 			System.out.println("(Lexer Error) unknown character: " + currentChar);
 			System.exit(1);
 		}
