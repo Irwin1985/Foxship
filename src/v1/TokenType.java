@@ -29,6 +29,8 @@ public enum TokenType {
 	// Keywords
 	CREATE,
 	CONNECTION,
+	FROM,
+	FILE,
 	ENGINE,
 	SERVER,
 	PORT,
@@ -39,6 +41,7 @@ public enum TokenType {
 	TO,
 	TITLE,
 	MESSAGEBOX,
+	EXPORT,
 	
 	// table commands
 	USE,

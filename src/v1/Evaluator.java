@@ -1,5 +1,11 @@
 package v1;
 
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
 import javax.swing.JFrame;
 import javax.swing.JOptionPane;
 
@@ -9,13 +15,18 @@ public class Evaluator {
 	private final ObjBoolean TRUE = new ObjBoolean(true);
 	private final ObjBoolean FALSE = new ObjBoolean(false);
 	private final ObjNull NULL = new ObjNull();
-	
+	private final String MSG_CONNECTION_NOT_EXISTS = "there is not an active connection. Please use: SET CONNECTION command.";
+	private final String MSG_NOT_OPEN_TABLE = "No table is open in the current work area.";
+
 	public Obj Eval(Ast node, Environment env) {
 		if (node instanceof AstProgram) {
 			return evalProgram((AstProgram)node, env);
 		}
 		else if (node instanceof AstConnection) {
 			return evalAstConnection((AstConnection)node, env);
+		}
+		else if (node instanceof AstConnectionFromFile) {
+			return evalConnectionFromFile((AstConnectionFromFile)node, env);
 		}
 		else if (node instanceof AstSetConnection) {
 			return evalSetConnection((AstSetConnection)node, env);
@@ -65,6 +76,9 @@ public class Evaluator {
 		else if (node instanceof AstAssignment) {
 			return evalAssignment((AstAssignment)node, env);
 		}
+		else if (node instanceof AstExportConnection) {
+			return evalExportConnection((AstExportConnection)node, env);
+		}
 		return null;
 	}
 	/***********************************************************************
@@ -81,6 +95,85 @@ public class Evaluator {
 			}
 		}
 		return result;
+	}
+	private Obj evalConnectionFromFile(AstConnectionFromFile astCon, Environment env) {
+		Obj objResult = Eval(astCon.astFile, env);
+		if (isError(objResult)) {
+			return objResult;
+		}
+		if (objResult == null) {
+			return new ObjError("Invalid file path or name.");
+		}
+		if (objResult.type() != ObjType.STRING_OBJ) {
+			return new ObjError("Invalid data type for file path.");
+		}
+		
+		try {
+			File fileCheck = new File(objResult.inspect());
+			if (!fileCheck.exists()) {
+				return new ObjError("File does not exists: '" + objResult.inspect() + "'");
+			}
+			String content = Files.readString(Path.of(objResult.inspect()));
+			// parse the content
+			Tokenizer tokenizer = new Tokenizer(content);
+			Parser parser = new Parser(tokenizer);
+			AstProgram astProgram = new AstProgram();
+			astProgram.commands = parser.parseCommand();
+			// eval the content
+			Obj objValue = Eval(astProgram, env);
+			if (isError(objValue)) {
+				return objValue;
+			}
+			if (objValue == null) {
+				return new ObjError("Runtime error: invalid object result");
+			}
+			if (objValue.type() != ObjType.CONN_OBJ) {
+				return new ObjError("Runtime error: object is not a connection type.");
+			}
+			return objValue;
+		} catch (IOException e) {
+			return new ObjError("Runtime Error: " + e.getMessage());
+		}
+	}
+	private Obj evalExportConnection(AstExportConnection astExport, Environment env) {
+		Obj objOutput = Eval(astExport.fileName, env);
+		if (isError(objOutput)) {
+			return objOutput;
+		}
+		if (objOutput.type() != ObjType.STRING_OBJ) {
+			return new ObjError("invalid filename");
+		}
+		if (globalEnv.currentConnectionName.isEmpty()) {
+			return new ObjError(MSG_CONNECTION_NOT_EXISTS);
+		}
+		// get the connection data
+		Obj objResult = env.get(globalEnv.currentConnectionName);
+		if (objResult == null) {
+			return new ObjError("Connection '"+  globalEnv.currentConnectionName +"' does not exist.");
+		}
+		if (objResult.type() != ObjType.CONN_OBJ) {
+			return new ObjError("Identifier '" + globalEnv.currentConnectionName + "' is not a connection object.");
+		}
+		ObjConnection objConn = (ObjConnection)objResult;
+		StringBuilder output = new StringBuilder();
+		//CREATE CONNECTION MyCon ENGINE "MySQL" SERVER "localhost" PORT "3306" DATABASE "classicmodels" USER "root" PASSWORD "1234"
+		output.append("CREATE CONNECTION ");
+		output.append(objConn.conId);
+		output.append(" ENGINE \"" + objConn.engineToString() + "\"");
+		output.append(" SERVER \"" + objConn.server + "\"");
+		output.append(" PORT \"" + objConn.port + "\"");
+		output.append(" DATABASE \"" + objConn.dataBase + "\"");
+		output.append(" USER \"" + objConn.user + "\"");
+		output.append(" PASSWORD \"" + objConn.password + "\"");
+		// generate file
+		try {
+			FileWriter file = new FileWriter(objOutput.inspect());
+			file.write(output.toString());
+			file.close();
+			return TRUE;
+		} catch (Exception e) {
+			return new ObjError("Runtime error: " + e.getMessage());
+		}
 	}
 	private Obj evalAssignment(AstAssignment astAssign, Environment env) {
 		String identifier = "";
@@ -126,8 +219,8 @@ public class Evaluator {
 			aliasName = globalEnv.currentAlias;
 		}
 		// check for current connection
-		if (globalEnv.currentConn == null) {
-			return new ObjError("there is not an active connection. Please use: SET CONNECTION command.");
+		if (globalEnv.currentConnection == null) {
+			return new ObjError(MSG_CONNECTION_NOT_EXISTS);
 		}
 		// search for the alias
 		Obj objResult = env.get(aliasName);
@@ -141,12 +234,12 @@ public class Evaluator {
 			return runTimeError();
 		}
 
-		return null;		
+		return NULL;		
 	}
 	private Obj evalUseTable(AstUseTable useTable, Environment env) {
 		// check for current connection
-		if (globalEnv.currentConn == null) {
-			return new ObjError("there is not an active connection. Please use: SET CONNECTION command.");
+		if (globalEnv.currentConnection == null) {
+			return new ObjError(MSG_CONNECTION_NOT_EXISTS);
 		}
 
 		// check for alias in use
@@ -163,7 +256,7 @@ public class Evaluator {
 		objTable.noUpdate = useTable.noUpdate;
 
 		// open table
-		if (!objTable.openTable(globalEnv.currentConn)) {
+		if (!objTable.openTable(globalEnv.currentConnection)) {
 			return runTimeError();
 		}
 		
@@ -177,16 +270,70 @@ public class Evaluator {
 	}
 	private Obj evalAstConnection(AstConnection astConn, Environment env) {
 		ObjConnection objConn = new ObjConnection();
+
 		// fill properties
+		Obj objResult = null;
+		// connection name
 		objConn.conId = astConn.conId;
-		objConn.dataBase = astConn.dataBase;
-		objConn.engine = astConn.engine;
-		objConn.password = astConn.password;
-		objConn.port = astConn.port;
-		objConn.server = astConn.server;
-		objConn.user = astConn.user;
+		// Database
+		objResult = Eval(astConn.dataBase, env);		
+		if (isError(objResult)) {
+			return objResult;
+		}
+		if (objResult == null || objResult.type() != ObjType.STRING_OBJ) {
+			return new ObjError("invalid data type for DATABASE command.");
+		}
+		objConn.dataBase = objResult.inspect();
+		// Engine
+		objResult = Eval(astConn.engine, env);		
+		if (isError(objResult)) {
+			return objResult;
+		}
+		if (objResult == null || objResult.type() != ObjType.STRING_OBJ) {
+			return new ObjError("invalid data type for ENGINE command.");
+		}		
+		if (objResult.inspect().toLowerCase().equals("mysql")) {			
+			objConn.engine = EngineType.MYSQL;
+		}
+		// password
+		objResult = Eval(astConn.password, env);		
+		if (isError(objResult)) {
+			return objResult;
+		}
+		if (objResult == null || objResult.type() != ObjType.STRING_OBJ) {
+			return new ObjError("invalid data type for PASSWORD command.");
+		}		
+		objConn.password = objResult.inspect();
+		// port
+		objResult = Eval(astConn.port, env);		
+		if (isError(objResult)) {
+			return objResult;
+		}
+		if (objResult == null || objResult.type() != ObjType.STRING_OBJ) {
+			return new ObjError("invalid data type for PORT command.");
+		}		
+		objConn.port = objResult.inspect();
+		// server
+		objResult = Eval(astConn.server, env);		
+		if (isError(objResult)) {
+			return objResult;
+		}
+		if (objResult == null || objResult.type() != ObjType.STRING_OBJ) {
+			return new ObjError("invalid data type for SERVER command.");
+		}		
+		objConn.server = objResult.inspect();
+		// user
+		objResult = Eval(astConn.user, env);		
+		if (isError(objResult)) {
+			return objResult;
+		}
+		if (objResult == null || objResult.type() != ObjType.STRING_OBJ) {
+			return new ObjError("invalid data type for USER command.");
+		}				
+		objConn.user = objResult.inspect();
+		
 		// register object in symbol table.
-		env.set(astConn.conId, objConn);
+		env.set(astConn.conId.toString(), objConn);
 		
 		return objConn; // return the object		
 	}
@@ -205,7 +352,8 @@ public class Evaluator {
 		}
 		
 		// Set the active connection
-		globalEnv.currentConn = objConn.conn;
+		globalEnv.currentConnection = objConn.conn;
+		globalEnv.currentConnectionName = objConn.conId;
 		
 		// Return the updated objConn to SymbolTable
 		env.set(astSetConn.name, objConn);
@@ -224,12 +372,13 @@ public class Evaluator {
 		objConn.conn = null;
 		
 		// close from globalenv
-		globalEnv.currentConn = null;
+		globalEnv.currentConnection = null;
+		globalEnv.currentConnectionName = "";
 		
 		// finally remove from environment
 		env.remove(astCloseConn.name);
 
-		return null; // nothing to return
+		return NULL; // nothing to return
 	}
 	
 	private Obj evalUseIn(AstUseIn useIn, Environment env) {
@@ -243,7 +392,7 @@ public class Evaluator {
 		// delete from symboltable
 		env.remove(useIn.alias);
 		
-		return null;
+		return NULL;
 	}
 
 	private Obj evalSelectTable(AstSelectTable astSel, Environment env) {
@@ -256,12 +405,12 @@ public class Evaluator {
 		// update the current alias
 		globalEnv.currentAlias = astSel.name;
 		
-		return null;
+		return NULL;
 	}
 	
 	private Obj evalBrowse(AstBrowse astBrowse, Environment env) {
 		if (globalEnv.currentAlias.isEmpty()) {
-			return new ObjError("No table is open in the current work area.");
+			return new ObjError(MSG_NOT_OPEN_TABLE);
 		}
 		// search for alias name
 		Obj value = env.get(globalEnv.currentAlias);
@@ -277,7 +426,7 @@ public class Evaluator {
 			return new ObjError("Runtime Error: " + e.getMessage());
 		}
 		
-		return null;
+		return NULL;
 	}
 	private Obj evalUnary(AstUnary astUnary, Environment env) {
 		Obj rightObj = Eval(astUnary.right, env);
@@ -297,7 +446,7 @@ public class Evaluator {
 			}
 			return new ObjBoolean(!((ObjBoolean)rightObj).value);									
 		}
-		return null;
+		return NULL;
 	}
 	private Obj evalBinOp(AstBinOp astBinOp, Environment env) {
 		if (astBinOp.op == TokenType.AND || astBinOp.op == TokenType.OR) {
@@ -327,7 +476,7 @@ public class Evaluator {
 		{
 			return evalArithmeticExpression(leftOp, astBinOp.op, rightOp);
 		}
-		return null;
+		return NULL;
 	}
 	private Obj evalArithmeticExpression(Obj leftObj, TokenType typeOp, Obj rightObj) {
 		if (leftObj.type() != ObjType.NUMBER_OBJ || rightObj.type() != ObjType.NUMBER_OBJ) {
@@ -397,7 +546,7 @@ public class Evaluator {
 				return evalRightLogicalOperand(astBinOp.right, env);				
 			}
 		}
-		return null;
+		return NULL;
 	}
 	private Obj evalRightLogicalOperand(Ast astRight, Environment env) {
 		Obj right_obj = Eval(astRight, env);

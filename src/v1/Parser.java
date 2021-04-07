@@ -1,5 +1,7 @@
 package v1;
 import java.util.List;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 
 public class Parser {
@@ -32,7 +34,7 @@ public class Parser {
 
 	private Ast parseStatement() {
 		Ast statement = null;
-		if (curToken.type == TokenType.CREATE) {
+		if (curToken.type == TokenType.CREATE && peekToken.type == TokenType.CONNECTION) {
 			statement = parseConnection();
 		}
 		else if (curToken.type == TokenType.SET && peekToken.type == TokenType.CONNECTION) {
@@ -59,6 +61,9 @@ public class Parser {
 		else if (curToken.type == TokenType.GO) {
 			statement = parseGo();
 		}
+		else if (curToken.type == TokenType.EXPORT) {
+			statement = parseExportConnection();
+		}
 		else {
 			statement = parseExpression();
 		}
@@ -67,60 +72,52 @@ public class Parser {
 	}
 	
 	private Ast parseConnection() {
-		AstConnection conn = new AstConnection();
 		
 		match(TokenType.CREATE);
 		match(TokenType.CONNECTION);
-		
-		conn.conId = match(TokenType.IDENT).lexeme;
-		
-		while (curToken.type != TokenType.EOF && curToken.type != TokenType.LBREAK) {			
-			if (curToken.type == TokenType.DATABASE) {
-				match(TokenType.DATABASE);
-				conn.dataBase = match(TokenType.STRING).lexeme;
-				continue;
-			}
-			else if (curToken.type == TokenType.ENGINE) {
-				match(TokenType.ENGINE);
-				
-				String engine = match(TokenType.STRING).lexeme.toLowerCase();
-				if (engine.equals("mysql")) {
-					conn.engine = EngineType.MYSQL;				
-				}
-				else if (engine.equals("mariadb")) {
-					conn.engine = EngineType.MARIADB;
-				}
-				else if (engine.equals("postgre")) {
-					conn.engine = EngineType.POSTGRE;
-				} else {
-					System.out.println("Unknown engine type");
-					System.exit(1);
-				}
-				continue;
-			}
-			else if (curToken.type == TokenType.PASSWORD) {
-				match(TokenType.PASSWORD);
-				conn.password = match(TokenType.STRING).lexeme;
-				continue;
-			}
-			else if (curToken.type == TokenType.PORT) {
-				match(TokenType.PORT);
-				conn.port = match(TokenType.STRING).lexeme;
-				continue;
-			}
-			else if (curToken.type == TokenType.SERVER) {
-				match(TokenType.SERVER);
-				conn.server = match(TokenType.STRING).lexeme;
-				continue;
-			}
-			else if (curToken.type == TokenType.USER) {
-				match(TokenType.USER);
-				conn.user = match(TokenType.STRING).lexeme;
-				continue;
-			}
+		if (curToken.type == TokenType.FROM) {
+			match(TokenType.FROM);
+			match(TokenType.FILE);
+			return new AstConnectionFromFile(parseExpression());
 		}
-		
-		return conn;
+		else {
+			AstConnection conn = new AstConnection();
+			conn.conId = match(TokenType.IDENT).lexeme;
+			
+			while (curToken.type != TokenType.EOF && curToken.type != TokenType.LBREAK) {			
+				if (curToken.type == TokenType.DATABASE) {
+					match(TokenType.DATABASE);
+					conn.dataBase = parseExpression();
+					continue;
+				}
+				else if (curToken.type == TokenType.ENGINE) {
+					match(TokenType.ENGINE);				
+					conn.engine = parseExpression();
+					continue;
+				}
+				else if (curToken.type == TokenType.PASSWORD) {
+					match(TokenType.PASSWORD);
+					conn.password = parseExpression();
+					continue;
+				}
+				else if (curToken.type == TokenType.PORT) {
+					match(TokenType.PORT);
+					conn.port = parseExpression();
+					continue;
+				}
+				else if (curToken.type == TokenType.SERVER) {
+					match(TokenType.SERVER);
+					conn.server = parseExpression();
+					continue;
+				}
+				else if (curToken.type == TokenType.USER) {
+					match(TokenType.USER);
+					conn.user = parseExpression();
+					continue;
+				}
+			}
+			return conn;
+		}		
 	}
 	
 	private Ast parseCloseConnection() {
@@ -348,6 +345,13 @@ public class Parser {
 			astGo.astAlias = parseExpression();
 		}
 		return astGo;
+	}
+	private Ast parseExportConnection() {
+		match(TokenType.EXPORT);
+		match(TokenType.CONNECTION);
+		match(TokenType.TO);
+		
+		return new AstExportConnection(parseExpression());
 	}
 	private void skipNewLine() {
 		if (curToken.type == TokenType.LBREAK) {

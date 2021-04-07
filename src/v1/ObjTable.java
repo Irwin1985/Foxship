@@ -48,6 +48,6 @@ public class ObjTable extends Obj {
 		return ObjType.TABLE_OBJ;
 	}
 	public String inspect() {
-		return "ok";
+		return "true";
 	}
 }

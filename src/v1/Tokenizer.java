@@ -46,6 +46,10 @@ public class Tokenizer {
 		keywords.put("GO", TokenType.GO);
 		keywords.put("RECNO", TokenType.RECNO);
 		keywords.put("SKIP", TokenType.SKIP);
+		keywords.put("EXPORT", TokenType.EXPORT);
+		keywords.put("FROM", TokenType.FROM);
+		keywords.put("FILE", TokenType.FILE);
+		
 		// Single digit characters
 		singleChars = new HashMap<String, TokenType>();
 		singleChars.put(".", TokenType.DOT);

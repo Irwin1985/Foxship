@@ -35,6 +35,12 @@ public class ObjConnection extends Obj {
 		}
 		return "";
 	}
+	public String engineToString() {
+		if (engine == EngineType.MYSQL) {
+			return "MySQL";
+		}
+		return "";
+	}
 	
 	private String parseUrl() {
 		if (engine == EngineType.MYSQL) {
@@ -60,7 +66,7 @@ public class ObjConnection extends Obj {
 	}
 	
 	public String inspect() {
-		return "ok";
+		return "true";
 	}
 	
 }
