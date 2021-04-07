@@ -1,9 +1,9 @@
 package v1;
 
 public class AstUseIn extends Ast {
-	public String alias;
+	public Ast astAlias;
 	
-	public AstUseIn(String alias) {
-		this.alias = alias;
+	public AstUseIn(Ast astAlias) {
+		this.astAlias = astAlias;
 	}
 }

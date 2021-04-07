@@ -1,9 +1,10 @@
 package v1;
 
 public class AstSelectTable extends Ast {
-	public String name;
+	public Ast astName;
 	
+	public AstSelectTable() {}
 	public AstSelectTable(String name) {
-		this.name = name;
+		this.astName = astName;
 	}
 }

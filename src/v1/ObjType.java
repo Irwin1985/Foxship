@@ -8,4 +8,6 @@ public enum ObjType {
 	NUMBER_OBJ,
 	STRING_OBJ,
 	NULL_OBJ,	
+	FUNCTION_OBJ,
+	BUILTIN_OBJ,
 }

@@ -9,6 +9,10 @@ import java.nio.file.Path;
 import javax.swing.JFrame;
 import javax.swing.JOptionPane;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+
 public class Evaluator {
 	public GlobalEnv globalEnv;
 	
@@ -17,7 +21,16 @@ public class Evaluator {
 	private final ObjNull NULL = new ObjNull();
 	private final String MSG_CONNECTION_NOT_EXISTS = "there is not an active connection. Please use: SET CONNECTION command.";
 	private final String MSG_NOT_OPEN_TABLE = "No table is open in the current work area.";
+	private HashMap<String, ObjBuiltin> builtins;
 
+	public Evaluator() {
+		// fill builtins
+		builtins = new HashMap<String, ObjBuiltin>();
+		builtins.put("set", new ObjBuiltin(new BuiltinSet()));
+		builtins.put("alias", new ObjBuiltin(new BuiltinAlias()));
+		builtins.put("messagebox", new ObjBuiltin(new BuiltinMessagebox()));
+	}
+	
 	public Obj Eval(Ast node, Environment env) {
 		if (node instanceof AstProgram) {
 			return evalProgram((AstProgram)node, env);
@@ -64,9 +77,6 @@ public class Evaluator {
 		else if (node instanceof AstNumber) {
 			return new ObjNumber(((AstNumber)node).value);
 		}
-		else if (node instanceof AstMessagebox) {
-			return evalMessagebox((AstMessagebox)node, env);
-		}
 		else if (node instanceof AstGo) {
 			return evalGo((AstGo)node, env);
 		}
@@ -78,6 +88,9 @@ public class Evaluator {
 		}
 		else if (node instanceof AstExportConnection) {
 			return evalExportConnection((AstExportConnection)node, env);
+		}
+		else if (node instanceof AstFunctionCall) {
+			return evalFunctionCall((AstFunctionCall) node, env);
 		}
 		return null;
 	}
@@ -95,6 +108,53 @@ public class Evaluator {
 			}
 		}
 		return result;
+	}
+	private Obj evalFunctionCall(AstFunctionCall astFunction, Environment env) {
+		// eval the name ast
+		Obj objResult = null;
+		String functionName = "";
+		if (astFunction.astName instanceof AstIdentifier) {
+			functionName = ((AstIdentifier)astFunction.astName).value;
+		} else {			
+			objResult = Eval(astFunction.astName, env);
+			if (isError(objResult)) {
+				return objResult;
+			}
+			if (objResult == null || objResult.type() != ObjType.STRING_OBJ) {
+				return new ObjError("invalid data type for function name.");
+			}
+			// check for registered function
+			functionName = ((ObjString)objResult).value; 
+		}
+		objResult = env.get(functionName);
+		if (objResult == null) {
+			// check for builtin function
+			objResult = builtins.get(functionName.toLowerCase());
+			if (objResult == null) {
+				return new ObjError("function not found: '" + functionName + "'");
+			}
+		}
+		if (objResult.type() == ObjType.FUNCTION_OBJ) {
+			// TODO: implement user defined function here.
+			
+		}
+		else if (objResult.type() == ObjType.BUILTIN_OBJ) {
+			ObjBuiltin objBuiltin = (ObjBuiltin)objResult;
+			List<Obj> objArgs = new ArrayList<Obj>();
+			if (astFunction.arguments != null) {
+				// eval arguments
+				for (Ast argument : astFunction.arguments) {
+					objResult = Eval(argument, env);
+					if (isError(objResult)) {
+						return objResult;
+					}
+					objArgs.add(objResult);
+				}
+			}
+			// execute builtin function
+			return objBuiltin.functionName.execute(objArgs, globalEnv);
+		}
+		return TRUE;
 	}
 	private Obj evalConnectionFromFile(AstConnectionFromFile astCon, Environment env) {
 		Obj objResult = Eval(astCon.astFile, env);
@@ -242,18 +302,64 @@ public class Evaluator {
 			return new ObjError(MSG_CONNECTION_NOT_EXISTS);
 		}
 
+		Obj objResult = null;
+		// evaluate the alias name
+		String aliasName = "";
+		if (useTable.alias instanceof AstString) {
+			aliasName = ((AstString)useTable.alias).value;
+		} else {			
+			objResult = Eval(useTable.alias, env);		
+			if (isError(objResult)) {
+				return objResult;
+			}
+			if (objResult == null || objResult.type() != ObjType.STRING_OBJ) {
+				return new ObjError("invalid name or data type for alias");
+			}
+			aliasName = objResult.inspect();
+		}
 		// check for alias in use
-		Obj value = env.get(useTable.alias);
+		Obj value = env.get(aliasName);
 		if (value != null && value.type() == ObjType.TABLE_OBJ) {
-			return new ObjError("alias in use: " + useTable.alias);
+			return new ObjError("Alias is in use: '" + aliasName + "'");
 		}
 		// create the objTable
 		ObjTable objTable = new ObjTable();
-		objTable.alias = useTable.alias;			
-		objTable.filter = useTable.filter;
-		objTable.name = useTable.name;
-		objTable.noData = useTable.noData;
-		objTable.noUpdate = useTable.noUpdate;
+		objTable.alias = aliasName;
+		
+		// filter parameter
+		if (useTable.filter != null) {			
+			objResult = Eval(useTable.filter, env);
+			if (isError(objResult)) {
+				return objResult;
+			}
+			if (objResult.type() != ObjType.STRING_OBJ) {				
+				objTable.filter = "";
+			} else {
+				objTable.filter = objResult.inspect();
+			}
+		}
+		// name parameter
+		if (useTable.name != null) {
+			if (useTable.name instanceof AstString) {
+				objTable.name = ((AstString)useTable.name).value;
+			} else {				
+				objResult = Eval(useTable.name, env);
+				if (isError(objResult)) {
+					return objResult;
+				}
+				if (objResult.type() != ObjType.STRING_OBJ) {				
+					objTable.name = "";
+				} else {
+					objTable.name = objResult.inspect();
+				}
+			}
+		}
+		if (useTable.noData != null) {			
+			objTable.noData = ((AstBoolean)useTable.noData).value;
+		}
+		if (useTable.noUpdate != null) {
+			objTable.noUpdate = ((AstBoolean)useTable.noUpdate).value;
+		}
 
 		// open table
 		if (!objTable.openTable(globalEnv.currentConnection)) {
@@ -261,7 +367,7 @@ public class Evaluator {
 		}
 		
 		// update current alias
-		globalEnv.currentAlias = useTable.alias;
+		globalEnv.currentAlias = aliasName;
 		
 		// register in symbol table
 		env.set(objTable.alias, objTable);
@@ -382,30 +488,74 @@ public class Evaluator {
 	}
 	
 	private Obj evalUseIn(AstUseIn useIn, Environment env) {
+		String aliasName = "";
+		// check for current connection
+		if (globalEnv.currentConnection == null) {
+			return new ObjError(MSG_CONNECTION_NOT_EXISTS);
+		}	
+		if (useIn.astAlias == null) {
+			if (globalEnv.currentAlias.isEmpty()) {
+				return NULL;
+			} else {
+				aliasName = globalEnv.currentAlias; 
+			}
+		} else {
+			// evaluate alias node
+			Obj objResult = Eval(useIn.astAlias, env);
+			if (isError(objResult)) {
+				return objResult;
+			}
+			if (objResult == null || objResult.type() != ObjType.STRING_OBJ) {
+				return new ObjError("Invalid data type for alias name");
+			}
+			aliasName = objResult.inspect();
+		}
 		// search for alias name
-		Obj value = env.get(useIn.alias);
+		Obj value = env.get(aliasName);
 		if (value == null) {
-			return new ObjError("Alias '" + useIn.alias + "' is not found.");
+			return new ObjError("Alias '" + aliasName + "' is not found.");
 		}
 		// delete the alias object
 		value = null;
 		// delete from symboltable
-		env.remove(useIn.alias);
+		env.remove(aliasName);
+		// delete the current alias from global environment
+		globalEnv.currentAlias = "";
 		
 		return NULL;
 	}
 
 	private Obj evalSelectTable(AstSelectTable astSel, Environment env) {
-		// search for alias name
-		Obj value = env.get(astSel.name);
-		if (value == null) {
-			return new ObjError("Alias '" + astSel.name + "' is not found.");
+		// check for current connection
+		if (globalEnv.currentConnection == null) {
+			return new ObjError(MSG_CONNECTION_NOT_EXISTS);
+		}
+		
+		// evaluate table name
+		String tableName = "";
+		if (astSel.astName instanceof AstString) {
+			tableName = ((AstString)astSel.astName).value;
+		} else {			
+			Obj objResult = Eval(astSel.astName, env);
+			if (isError(objResult)) {
+				return objResult;
+			}
+			if (objResult == null || objResult.type() != ObjType.STRING_OBJ) {
+				return new ObjError("invalid data type for alias name.");
+			}		
+			// search for alias name
+			tableName = objResult.inspect();
 		}
 
-		// update the current alias
-		globalEnv.currentAlias = astSel.name;
+		Obj value = env.get(tableName);		
+		if (value == null || value.type() != ObjType.TABLE_OBJ) {
+			return new ObjError("Alias '" + tableName + "' is not found.");
+		}
 		
-		return NULL;
+		// update the current alias
+		globalEnv.currentAlias = tableName;
+		
+		return TRUE;
 	}
 	
 	private Obj evalBrowse(AstBrowse astBrowse, Environment env) {
@@ -557,243 +707,6 @@ public class Evaluator {
 			return new ObjError("Invalid operator for logical expression");
 		}
 		return ((ObjBoolean)right_obj).value ? TRUE : FALSE;
-	}
-	private Obj evalMessagebox(AstMessagebox astMbox, Environment env) {
-		String content = "", title = "Foxship";
-		int buttonType = 0, timeOut = 0;
-		
-		Obj objContent = Eval(astMbox.content, env);
-		if (isError(objContent)) {
-			return objContent;
-		}
-		content = objContent.inspect();
-		
-		Obj objTitle = Eval(astMbox.title, env);
-		if (isError(objTitle)) {
-			return objTitle;
-		}
-		if (objTitle != null) {			
-			title = objTitle.inspect();
-		}
-		
-		Obj objButtons = Eval(astMbox.buttons, env);
-		if (isError(objButtons)) {
-			return objButtons;
-		}
-		if (objButtons != null) {			
-			if (objButtons.type() != ObjType.NUMBER_OBJ) {
-				return new ObjError("button type in messagebox must be an INTEGER.");
-			}
-			buttonType = (int)((ObjNumber)objButtons).value;
-		}
-		
-		Obj objTimeout = Eval(astMbox.timeout, env);
-		if (isError(objTimeout)) {
-			return objTimeout;
-		}
-		if (objTimeout != null) {			
-			if (objTimeout.type() != ObjType.NUMBER_OBJ) {
-				return new ObjError("timeout parameter in messagebox must be an INTEGER.");
-			}
-			timeOut = (int)((ObjNumber)objTimeout).value;
-		}	
-		// parse buttons and show message
-		int result = 0, nReturn = 1;
-		switch(buttonType) {
-		case 16:
-		{
-			String[] opt = {"Aceptar"};
-			result = showMessagebox(content, title, opt, JOptionPane.ERROR_MESSAGE);
-		}
-			break;
-		case 17:{			
-			String[] opt = {"Aceptar", "Cancelar"};
-			result = showMessagebox(content, title, opt, JOptionPane.ERROR_MESSAGE);
-		}
-			break;
-		case 18:{
-			String[] opt = {"Abortar", "Reintentar", "Ignorar"};
-			result = showMessagebox(content, title, opt, JOptionPane.ERROR_MESSAGE);			
-		}
-			break;
-		case 19:{
-			String[] opt = {"Sí", "No", "Cancelar"};
-			result = showMessagebox(content, title, opt, JOptionPane.ERROR_MESSAGE);			
-		}
-			break;
-		case 20:{
-			String[] opt = {"Sí", "No"};
-			result = showMessagebox(content, title, opt, JOptionPane.ERROR_MESSAGE);
-		}
-			break;
-		case 21:{
-			String[] opt = {"Reintentar", "Cancelar"};
-			result = showMessagebox(content, title, opt, JOptionPane.ERROR_MESSAGE);			
-		}
-			break;
-		case 32:{
-			String[] opt = {"Aceptar"};
-			result = showMessagebox(content, title, opt, JOptionPane.QUESTION_MESSAGE);
-		}
-		break;
-		case 33:{
-			String[] opt = {"Aceptar", "Cancelar"};
-			result = showMessagebox(content, title, opt, JOptionPane.QUESTION_MESSAGE);
-		}
-		break;
-		case 34:{
-			String[] opt = {"Abortar", "Reintentar", "Ignorar"};
-			result = showMessagebox(content, title, opt, JOptionPane.QUESTION_MESSAGE);
-		}
-		break;
-		case 35:{
-			String[] opt = {"Sí", "No", "Cancelar"};
-			result = showMessagebox(content, title, opt, JOptionPane.QUESTION_MESSAGE);
-		}
-		break;
-		case 36:{
-			String[] opt = {"Sí", "No"};
-			result = showMessagebox(content, title, opt, JOptionPane.QUESTION_MESSAGE);
-		}
-		break;
-		case 37:{
-			String[] opt = {"Reintentar", "Cancelar"};
-			result = showMessagebox(content, title, opt, JOptionPane.QUESTION_MESSAGE);
-		}		
-		break;
-		case 48:{
-			String[] opt = {"Aceptar"};
-			result = showMessagebox(content, title, opt, JOptionPane.WARNING_MESSAGE);
-		}
-		break;
-		case 49:{
-			String[] opt = {"Aceptar", "Cancelar"};
-			result = showMessagebox(content, title, opt, JOptionPane.WARNING_MESSAGE);
-		}
-		break;
-		case 50:{
-			String[] opt = {"Abortar", "Reintentar", "Ignorar"};
-			result = showMessagebox(content, title, opt, JOptionPane.WARNING_MESSAGE);
-		}
-		break;
-		case 51:{
-			String[] opt = {"Sí", "No", "Cancelar"};
-			result = showMessagebox(content, title, opt, JOptionPane.WARNING_MESSAGE);
-		}
-		break;
-		case 52:{
-			String[] opt = {"Sí", "No"};
-			result = showMessagebox(content, title, opt, JOptionPane.WARNING_MESSAGE);
-		}
-		break;
-		case 53:{
-			String[] opt = {"Reintentar", "Cancelar"};
-			result = showMessagebox(content, title, opt, JOptionPane.WARNING_MESSAGE);
-		}
-		break;		
-		case 64:{
-			String[] opt = {"Aceptar"};
-			result = showMessagebox(content, title, opt, JOptionPane.INFORMATION_MESSAGE);
-		}
-		break;
-		case 65:{
-			String[] opt = {"Aceptar", "Calcelar"};
-			result = showMessagebox(content, title, opt, JOptionPane.INFORMATION_MESSAGE);
-		}
-		break;
-		case 66:{
-			String[] opt = {"Abortar", "Reintentar", "Ignorar"};
-			result = showMessagebox(content, title, opt, JOptionPane.INFORMATION_MESSAGE);
-		}
-		break;
-		case 67:{
-			String[] opt = {"Sí", "No", "Cancelar"};
-			result = showMessagebox(content, title, opt, JOptionPane.INFORMATION_MESSAGE);
-		}
-		break;
-		case 68:{
-			String[] opt = {"Sí", "No"};
-			result = showMessagebox(content, title, opt, JOptionPane.INFORMATION_MESSAGE);
-		}
-		break;
-		case 69:{
-			String[] opt = {"Reintentar", "Cancelar"};
-			result = showMessagebox(content, title, opt, JOptionPane.INFORMATION_MESSAGE);
-		}
-		break;
-		default:
-			String[] opt = {"Aceptar"};
-			result = showMessagebox(content, title, opt, JOptionPane.INFORMATION_MESSAGE);			
-		}
-		int[] opt1 = {0,16,32,48,64};
-		int[] opt2 = {17, 33, 49, 65, (1 + 16 + 256), (1 + 32 + 256), (1 + 48 + 256), (1 + 64 + 256)};
-		int[] opt3 = {18, 34, 50, 66, (2 + 16 + 256), (2 + 16 + 512), (2 + 32 + 256), (2 + 32 + 512), (2 + 48 + 256), (2 + 48 + 512), (2 + 64 + 256), (2 + 64 + 512)};
-		int[] opt4 = {19, 35, 51, 67, (3 + 16 + 256), (3 + 16 + 512), (3 + 32 + 256), (3 + 32 + 512), (3 + 48 + 256), (3 + 48 + 512), (3 + 64 + 256), (3 + 64 + 512)};
-		int[] opt5 = {20, 36, 52, 68, (4 + 16 + 256), (4 + 16 + 512), (4 + 32 + 256), (4 + 32 + 512), (4 + 48 + 256), (4 + 48 + 512), (4 + 64 + 256), (4 + 64 + 512)};
-		int[] opt6 = {21, 37, 53, 69, (5 + 16 + 256), (5 + 16 + 512), (5 + 32 + 256), (5 + 32 + 512), (5 + 48 + 256), (5 + 48 + 512), (5 + 64 + 256), (5 + 64 + 512)};
-
-		if (isInIntegerList(buttonType, opt1)) {
-			return new ObjNumber(1);
-		}
-		if (isInIntegerList(buttonType, opt2)) {
-			nReturn = result == 1 ? 1 : 2;
-		}
-		if (isInIntegerList(buttonType, opt3)) {
-			if (result == 0) {
-				nReturn = 3;
-			} else if (result == 1) {
-				nReturn = 4;
-			} else if (result == 2) {
-				nReturn = 5;
-			}
-		}
-		if (isInIntegerList(buttonType, opt4)) {
-			if (result == 0) {
-				nReturn = 6;
-			} else if (result == 1) {
-				nReturn = 7;
-			} else if (result == 2) {
-				nReturn = 2;
-			}
-		}
-		if (isInIntegerList(buttonType, opt5)) {
-			if (result == 0) {
-				nReturn = 6;
-			} else if (result == 1) {
-				nReturn = 7;
-			}
-		}
-		if (isInIntegerList(buttonType, opt6)) {
-			if (result == 0) {
-				nReturn = 4;
-			} else if (result == 1) {
-				nReturn = 2;
-			}
-		}
-		return new ObjNumber(nReturn);
-	}
-	private boolean isInIntegerList(int compareFrom, int...numbers) {
-		for (int number : numbers) {
-			if (number == compareFrom) {
-				return true;
-			}
-		}
-		return false;
-	}
-	private int showMessagebox(String content, String title, String[] choices, int buttons) {
-		JFrame jf=new JFrame();
-		jf.setAlwaysOnTop(true);
-		
-		int response = JOptionPane.showOptionDialog(
-				jf,
-                content,
-                title,
-                JOptionPane.CANCEL_OPTION,
-                buttons,
-                null,
-                choices,
-                "None");	
-		return response;
 	}
 	private ObjError runTimeError() {
 		return new ObjError("Runtime Error");

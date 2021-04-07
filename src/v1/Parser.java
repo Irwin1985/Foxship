@@ -43,11 +43,8 @@ public class Parser {
 		else if (curToken.type == TokenType.CLOSE && peekToken.type == TokenType.CONNECTION) {
 			statement = parseCloseConnection();
 		}
-		else if (curToken.type == TokenType.USE && peekToken.type == TokenType.IDENT) {
+		else if (curToken.type == TokenType.USE) {
 			statement = parseUse();
-		}
-		else if (curToken.type == TokenType.USE && peekToken.type == TokenType.IN) {
-			statement = parseUseIn();
 		}
 		else if (curToken.type == TokenType.SELECT) {
 			statement = parseSelectTable();
@@ -55,15 +52,21 @@ public class Parser {
 		else if (curToken.type == TokenType.BROWSE) {
 			statement = parseBrowse();
 		}
-		else if (curToken.type == TokenType.MESSAGEBOX) {
-			statement = parseMessagebox();
-		} 
+		//else if (curToken.type == TokenType.MESSAGEBOX) {
+		//	statement = parseMessagebox();
+		//} 
 		else if (curToken.type == TokenType.GO) {
 			statement = parseGo();
 		}
 		else if (curToken.type == TokenType.EXPORT) {
 			statement = parseExportConnection();
 		}
+		//else if (curToken.type == TokenType.SET && peekToken.type == TokenType.LPAREN) {
+		//	statement = parseSetFunctionCall();
+		//}
+		//else if (curToken.type == TokenType.ALIAS && peekToken.type == TokenType.LPAREN) {
+		//	statement = parseAliasFunctionCall();
+		//}
 		else {
 			statement = parseExpression();
 		}
@@ -138,44 +141,68 @@ public class Parser {
 	
 	private Ast parseUse() {
 		match(TokenType.USE);
-		AstUseTable useTable = new AstUseTable();
-		useTable.name = match(TokenType.IDENT).lexeme;
-		
-		while (curToken.type != TokenType.EOF && curToken.type != TokenType.LBREAK) {
-			if (curToken.type == TokenType.ALIAS) {
-				match(TokenType.ALIAS);
-				useTable.alias = match(TokenType.IDENT).lexeme;
-				continue;
-			}
-			else if (curToken.type == TokenType.NODATA) {
-				match(TokenType.NODATA);
-				useTable.noData = true;
-				continue;
-			}
-			else if (curToken.type == TokenType.NOUPDATE) {
-				match(TokenType.NOUPDATE);
-				useTable.noUpdate = true;
-				continue;
+		if (curToken.type == TokenType.IN) {
+			match(TokenType.IN);
+			if (curToken.type == TokenType.LPAREN) {						
+				return new AstUseIn(parseExpression());
+			} else {
+				return new AstUseIn(new AstString(match(TokenType.IDENT).lexeme));
 			}
 		}
-		// check for no alias (assume name)
-		if (useTable.alias.isEmpty()) {
-			useTable.alias = useTable.name;
+		else if (curToken.type != TokenType.EOF) {			
+			AstUseTable useTable = new AstUseTable();
+			
+			if (curToken.type == TokenType.LPAREN) {
+				useTable.name = parseExpression();
+			} else {
+				useTable.name = new AstString(match(TokenType.IDENT).lexeme);
+			}
+			
+			while (curToken.type != TokenType.EOF && curToken.type != TokenType.LBREAK) {
+				if (curToken.type == TokenType.ALIAS) {
+					match(TokenType.ALIAS);
+					if (curToken.type == TokenType.LPAREN) {						
+						useTable.alias = parseExpression();
+					} else {
+						useTable.alias = new AstString(match(TokenType.IDENT).lexeme);
+					}
+					continue;
+				}
+				else if (curToken.type == TokenType.NODATA) {
+					match(TokenType.NODATA);
+					useTable.noData = new AstBoolean(true);
+					continue;
+				}
+				else if (curToken.type == TokenType.NOUPDATE) {
+					match(TokenType.NOUPDATE);
+					useTable.noUpdate = new AstBoolean(true);
+					continue;
+				}
+			}
+			// check for no alias (assume name)
+			if (useTable.alias == null) {
+				useTable.alias = useTable.name;
+			}
+			return useTable;		
+		} else {
+			return new AstUseIn(null); // null means "close current alias"
 		}
-		return useTable;		
-	}
-	
-	private Ast parseUseIn() {
-		match(TokenType.USE);
-		match(TokenType.IN);
-
-		return new AstUseIn(match(TokenType.IDENT).lexeme);
 	}
 	
 	private Ast parseSelectTable() {
 		match(TokenType.SELECT);
+		AstSelectTable astSelect = new AstSelectTable();
+		if (curToken.type == TokenType.LPAREN) {
+			match(TokenType.LPAREN);
+			astSelect.astName = parseExpression();
+			match(TokenType.RPAREN);
+		} else {
+			if (curToken.type == TokenType.IDENT) {				
+				astSelect.astName = new AstString(match(TokenType.IDENT).lexeme);
+			}
+		}
 
-		return new AstSelectTable(match(TokenType.IDENT).lexeme);
+		return astSelect;
 	}
 	
 	private Ast parseBrowse() {
@@ -292,7 +319,20 @@ public class Parser {
 	
 	private Ast parseCall() {
 		Ast expr = parsePrimary();
-		// check for function parsing
+		// check for function call
+		if (curToken.type == TokenType.LPAREN) {
+			match(TokenType.LPAREN);
+			List<Ast> arguments = new ArrayList<Ast>();
+			if (curToken.type != TokenType.RPAREN) {
+				arguments.add(parseExpression());
+				while (curToken.type == TokenType.COMMA) {
+					match(TokenType.COMMA);
+					arguments.add(parseExpression());
+				}
+			}
+			match(TokenType.RPAREN);
+			return new AstFunctionCall(expr, arguments);
+		}
 		return expr;
 	}
 	
@@ -322,6 +362,10 @@ public class Parser {
 			Ast expr = parseExpression();
 			match(TokenType.RPAREN);
 			return expr;
+		}
+		else if (curToken.type != TokenType.EOF) {
+			// asume keyword used as identifier for builtin function like 'ALIAS', 'SET', etc
+			return new AstIdentifier(match(curToken.type).lexeme);
 		}
 		
 		return null;
@@ -353,6 +397,26 @@ public class Parser {
 		
 		return new AstExportConnection(parseExpression());
 	}
+	private Ast parseSetFunctionCall() {
+		match(TokenType.SET);		
+		match(TokenType.LPAREN);
+		List<Ast> arguments = new ArrayList<Ast>();
+		if (curToken.type != TokenType.RPAREN) {
+			arguments.add(parseExpression());
+		}
+		match(TokenType.RPAREN);
+		return new AstFunctionCall(new AstString("set"), arguments);
+	}	
+	private Ast parseAliasFunctionCall() {
+		match(TokenType.ALIAS);		
+		match(TokenType.LPAREN);
+		List<Ast> arguments = new ArrayList<Ast>();
+		if (curToken.type != TokenType.RPAREN) {
+			arguments.add(parseExpression());
+		}
+		match(TokenType.RPAREN);
+		return new AstFunctionCall(new AstString("alias"), arguments);
+	}	
 	private void skipNewLine() {
 		if (curToken.type == TokenType.LBREAK) {
 			match(TokenType.LBREAK);

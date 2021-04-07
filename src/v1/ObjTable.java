@@ -31,7 +31,7 @@ public class ObjTable extends Obj {
 		if (noData) {
 			query += " WHERE 1 = 2 ";
 		}
-		else if (!filter.isEmpty()) {
+		else if (filter != null && !filter.isEmpty()) {
 			query += " WHERE " + filter;
 		}
 		try {
