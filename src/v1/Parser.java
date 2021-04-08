@@ -1,7 +1,5 @@
 package v1;
 import java.util.List;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 
 public class Parser {
@@ -52,21 +50,12 @@ public class Parser {
 		else if (curToken.type == TokenType.BROWSE) {
 			statement = parseBrowse();
 		}
-		//else if (curToken.type == TokenType.MESSAGEBOX) {
-		//	statement = parseMessagebox();
-		//} 
 		else if (curToken.type == TokenType.GO) {
 			statement = parseGo();
 		}
 		else if (curToken.type == TokenType.EXPORT) {
 			statement = parseExportConnection();
 		}
-		//else if (curToken.type == TokenType.SET && peekToken.type == TokenType.LPAREN) {
-		//	statement = parseSetFunctionCall();
-		//}
-		//else if (curToken.type == TokenType.ALIAS && peekToken.type == TokenType.LPAREN) {
-		//	statement = parseAliasFunctionCall();
-		//}
 		else {
 			statement = parseExpression();
 		}
@@ -217,32 +206,6 @@ public class Parser {
 			}
 		}
 		return browse;
-	}
-	private Ast parseMessagebox() {
-		AstMessagebox messagebox = new AstMessagebox();
-
-		match(TokenType.MESSAGEBOX);
-		match(TokenType.LPAREN);
-		messagebox.content = parseExpression();
-
-		// button type
-		if (curToken.type == TokenType.COMMA) {
-			match(TokenType.COMMA);
-			messagebox.buttons = parseExpression();
-		}
-		// title
-		if (curToken.type == TokenType.COMMA) {
-			match(TokenType.COMMA);
-			messagebox.title = parseExpression();
-		}
-		// timeout
-		if (curToken.type == TokenType.COMMA) {
-			match(TokenType.COMMA);
-			messagebox.timeout = parseExpression();
-		}		
-		match(TokenType.RPAREN);
-		
-		return messagebox;
 	}
 	
 	private Ast parseExpression() {
@@ -396,26 +359,6 @@ public class Parser {
 		match(TokenType.TO);
 		
 		return new AstExportConnection(parseExpression());
-	}
-	private Ast parseSetFunctionCall() {
-		match(TokenType.SET);		
-		match(TokenType.LPAREN);
-		List<Ast> arguments = new ArrayList<Ast>();
-		if (curToken.type != TokenType.RPAREN) {
-			arguments.add(parseExpression());
-		}
-		match(TokenType.RPAREN);
-		return new AstFunctionCall(new AstString("set"), arguments);
-	}	
-	private Ast parseAliasFunctionCall() {
-		match(TokenType.ALIAS);		
-		match(TokenType.LPAREN);
-		List<Ast> arguments = new ArrayList<Ast>();
-		if (curToken.type != TokenType.RPAREN) {
-			arguments.add(parseExpression());
-		}
-		match(TokenType.RPAREN);
-		return new AstFunctionCall(new AstString("alias"), arguments);
 	}	
 	private void skipNewLine() {
 		if (curToken.type == TokenType.LBREAK) {

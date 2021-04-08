@@ -127,14 +127,14 @@ public class Tokenizer {
 		return newToken(keywords.getOrDefault(lexeme.toUpperCase(), TokenType.IDENT), lexeme);
 	}
 	
-	private Token getString() {
+	private Token getString(char delimiter) {
 		String lexeme = "";
-		advance(); // skip the opening '"'
-		while (currentChar != NONE && currentChar != '"') {
+		advance(); // skip the opening delimiter
+		while (currentChar != NONE && currentChar != delimiter) {
 			lexeme += currentChar;
 			advance();
 		}
-		advance(); // skip the closing '"'
+		advance(); // skip the closing delimiter
 		return newToken(TokenType.STRING, lexeme);		
 	}
 	
@@ -172,8 +172,8 @@ public class Tokenizer {
 			if (isLetter(currentChar)) {
 				return getIdentifier();
 			}
-			if (currentChar == '"') {
-				return getString();
+			if (currentChar == '"' || currentChar == '\'') {
+				return getString(currentChar);
 			}
 			//< double digit length characters
 			if (currentChar == '<') {

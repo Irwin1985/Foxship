@@ -10,4 +10,5 @@ public enum ObjType {
 	NULL_OBJ,	
 	FUNCTION_OBJ,
 	BUILTIN_OBJ,
+	GENERIC_OBJ,
 }

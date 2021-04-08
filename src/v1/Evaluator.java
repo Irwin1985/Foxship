@@ -5,10 +5,6 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-
-import javax.swing.JFrame;
-import javax.swing.JOptionPane;
-
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -29,6 +25,7 @@ public class Evaluator {
 		builtins.put("set", new ObjBuiltin(new BuiltinSet()));
 		builtins.put("alias", new ObjBuiltin(new BuiltinAlias()));
 		builtins.put("messagebox", new ObjBuiltin(new BuiltinMessagebox()));
+		builtins.put("reccount", new ObjBuiltin(new BuiltinReccount()));
 	}
 	
 	public Obj Eval(Ast node, Environment env) {
@@ -126,7 +123,7 @@ public class Evaluator {
 			// check for registered function
 			functionName = ((ObjString)objResult).value; 
 		}
-		objResult = env.get(functionName);
+		objResult = env.get(functionName.toLowerCase());
 		if (objResult == null) {
 			// check for builtin function
 			objResult = builtins.get(functionName.toLowerCase());
@@ -207,7 +204,7 @@ public class Evaluator {
 			return new ObjError(MSG_CONNECTION_NOT_EXISTS);
 		}
 		// get the connection data
-		Obj objResult = env.get(globalEnv.currentConnectionName);
+		Obj objResult = env.get(globalEnv.currentConnectionName.toLowerCase());
 		if (objResult == null) {
 			return new ObjError("Connection '"+  globalEnv.currentConnectionName +"' does not exist.");
 		}
@@ -246,12 +243,24 @@ public class Evaluator {
 			return objValue;
 		}
 		// register the symbol
-		env.set(identifier, objValue);		
+		env.set(identifier.toLowerCase(), objValue);		
 		return objValue;
 	}
 	private Obj evalIdentifier(AstIdentifier ident, Environment env) {
+		// search in current alias in workarea
+		if (globalEnv.currentConnection != null && !globalEnv.currentAlias.isEmpty()) {
+			Obj objResult = globalEnv.workArea.get(globalEnv.currentAlias.toLowerCase());
+			if (objResult != null && objResult.type() == ObjType.TABLE_OBJ) {
+				// search identifier in resultset columns
+				ObjTable objTable = (ObjTable)objResult;
+				Object result = objTable.findColumn(ident.value); 
+				if (result != null) {
+					return new ObjGeneric(result);
+				}
+			}
+		}
 		// search in symbol table
-		Obj objValue = env.get(ident.value);
+		Obj objValue = env.get(ident.value.toLowerCase());
 		if (objValue == null) {
 			return new ObjError("Variable '" + ident.value + "' is not found.");
 		}
@@ -283,7 +292,7 @@ public class Evaluator {
 			return new ObjError(MSG_CONNECTION_NOT_EXISTS);
 		}
 		// search for the alias
-		Obj objResult = env.get(aliasName);
+		Obj objResult = globalEnv.workArea.get(aliasName.toLowerCase());
 		if (objResult == null) {
 			return new ObjError("Alias '" + aliasName + "' is not found.");
 		}
@@ -317,8 +326,9 @@ public class Evaluator {
 			}
 			aliasName = objResult.inspect();
 		}
+		
 		// check for alias in use
-		Obj value = env.get(aliasName);
+		Obj value = globalEnv.workArea.get(aliasName.toLowerCase());
 		if (value != null && value.type() == ObjType.TABLE_OBJ) {
 			return new ObjError("Alias is in use: '" + aliasName + "'");
 		}
@@ -362,7 +372,7 @@ public class Evaluator {
 		}
 
 		// open table
-		if (!objTable.openTable(globalEnv.currentConnection)) {
+		if (!objTable.requery(globalEnv.currentConnection)) {
 			return runTimeError();
 		}
 		
@@ -370,7 +380,7 @@ public class Evaluator {
 		globalEnv.currentAlias = aliasName;
 		
 		// register in symbol table
-		env.set(objTable.alias, objTable);
+		globalEnv.workArea.put(objTable.alias.toLowerCase(), objTable);		
 		
 		return objTable;		
 	}
@@ -439,13 +449,13 @@ public class Evaluator {
 		objConn.user = objResult.inspect();
 		
 		// register object in symbol table.
-		env.set(astConn.conId.toString(), objConn);
+		env.set(astConn.conId.toString().toLowerCase(), objConn);
 		
 		return objConn; // return the object		
 	}
 	private Obj evalSetConnection(AstSetConnection astSetConn, Environment env) {
 		// Find the symbol
-		Obj value = env.get(astSetConn.name);
+		Obj value = env.get(astSetConn.name.toLowerCase());
 		
 		if (value == null) {
 			return new ObjError("connection not found: " + astSetConn.name);
@@ -462,13 +472,13 @@ public class Evaluator {
 		globalEnv.currentConnectionName = objConn.conId;
 		
 		// Return the updated objConn to SymbolTable
-		env.set(astSetConn.name, objConn);
+		env.set(astSetConn.name.toLowerCase(), objConn);
 		
 		return objConn;		
 	}
 	private Obj evalCloseConnection(AstCloseConnection astCloseConn, Environment env) {
 		// Find the symbol
-		Obj value = env.get(astCloseConn.name);
+		Obj value = env.get(astCloseConn.name.toLowerCase());
 		
 		if (value == null) {
 			return new ObjError("connection not found: " + astCloseConn.name);
@@ -484,7 +494,7 @@ public class Evaluator {
 		// finally remove from environment
 		env.remove(astCloseConn.name);
 
-		return NULL; // nothing to return
+		return TRUE;
 	}
 	
 	private Obj evalUseIn(AstUseIn useIn, Environment env) {
@@ -510,8 +520,8 @@ public class Evaluator {
 			}
 			aliasName = objResult.inspect();
 		}
-		// search for alias name
-		Obj value = env.get(aliasName);
+		// search for alias name in workarea
+		Obj value = globalEnv.workArea.get(aliasName.toLowerCase());
 		if (value == null) {
 			return new ObjError("Alias '" + aliasName + "' is not found.");
 		}
@@ -547,7 +557,7 @@ public class Evaluator {
 			tableName = objResult.inspect();
 		}
 
-		Obj value = env.get(tableName);		
+		Obj value = globalEnv.workArea.get(tableName.toLowerCase());		
 		if (value == null || value.type() != ObjType.TABLE_OBJ) {
 			return new ObjError("Alias '" + tableName + "' is not found.");
 		}
@@ -562,16 +572,18 @@ public class Evaluator {
 		if (globalEnv.currentAlias.isEmpty()) {
 			return new ObjError(MSG_NOT_OPEN_TABLE);
 		}
-		// search for alias name
-		Obj value = env.get(globalEnv.currentAlias);
+		// search for alias name in workarea
+		Obj value = globalEnv.workArea.get(globalEnv.currentAlias.toLowerCase());
 		if (value == null) {
 			return new ObjError("Alias '" + globalEnv.currentAlias + "' is not found.");
 		}
 		ObjTable objTable = (ObjTable)value;
+		
 		String title = astBrowse.title.isEmpty() ? objTable.alias : astBrowse.title; 
 		// hit the browse
 		try {
 			BrowseWindow browse = new BrowseWindow(objTable.cursor, title);
+			objTable.requery(globalEnv.currentConnection);
 		} catch (Exception e) {
 			return new ObjError("Runtime Error: " + e.getMessage());
 		}
@@ -624,10 +636,25 @@ public class Evaluator {
 				astBinOp.op == TokenType.MUL ||
 				astBinOp.op == TokenType.DIV)
 		{
-			return evalArithmeticExpression(leftOp, astBinOp.op, rightOp);
+			if (leftOp.type() == ObjType.NUMBER_OBJ || rightOp.type() == ObjType.NUMBER_OBJ) {
+				return evalArithmeticExpression(leftOp, astBinOp.op, rightOp);
+			} 
+			else if (leftOp.type() == ObjType.STRING_OBJ || rightOp.type() == ObjType.STRING_OBJ) {
+				return evalBinaryStringExpression(leftOp, astBinOp.op, rightOp);
+			} else {
+				return new ObjError("Invalid data types for binary operation.");
+			}
 		}
 		return NULL;
 	}
+	private Obj evalBinaryStringExpression(Obj leftObj, TokenType typeOp, Obj rightObj) {
+		switch (typeOp) {
+		case PLUS:
+			return new ObjString(leftObj.inspect() + rightObj.inspect());
+		default:
+			return new ObjError("unknown operator for binary string expression");
+		}
+	}	
 	private Obj evalArithmeticExpression(Obj leftObj, TokenType typeOp, Obj rightObj) {
 		if (leftObj.type() != ObjType.NUMBER_OBJ || rightObj.type() != ObjType.NUMBER_OBJ) {
 			return new ObjError("Invalid operand for comparison expression");
@@ -647,7 +674,7 @@ public class Evaluator {
 			}
 			return new ObjNumber(left.value / right.value);
 		default:
-			return new ObjError("unknown ");
+			return new ObjError("unknown operator for binary integer expression.");
 		}
 	}	
 	private Obj evalRelationalExpression(Obj leftObj, TokenType typeOp, Obj rightObj) {
