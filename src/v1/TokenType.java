@@ -42,8 +42,14 @@ public enum TokenType {
 	TITLE,
 	MESSAGEBOX,
 	EXPORT,
-	
+		
 	// table commands
+	APPEND,
+	BLANK,
+	REPLACE,
+	FOR,
+	WHILE,
+	WITH,	
 	USE,
 	BROWSE,
 	CLOSE,

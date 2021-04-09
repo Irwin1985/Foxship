@@ -2,7 +2,6 @@ package v1;
 import java.sql.ResultSet;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
-import java.sql.Statement;
 
 public class ObjTable extends Obj {
 	public String name;
@@ -11,9 +10,63 @@ public class ObjTable extends Obj {
 	public boolean noUpdate;
 	public String filter;
 	public ResultSet cursor;
+	public boolean isAppending = false;
+	public boolean isOnChange = false;
 	
 	public ObjTable() {
 		// nothing
+	}
+	public boolean replace(String fieldName, Object fieldValue, String condition) {
+		try {
+			if (cursor != null) {
+				cursor.updateObject(fieldName, fieldValue);
+				isOnChange = true;
+				// TODO: implement here the replace loop condition.
+				return true;
+			} else {
+				return false;
+			}
+		} catch (Exception e) {
+			System.out.println("SQL Error: " + e.getMessage());
+		}
+		return false;		
+	}
+	public boolean tableUpdate() {
+		try {
+			if (cursor != null) {
+				// isAppending was flagged with 'append blank' command.
+				if (isAppending) {					
+					cursor.insertRow(); // commit changes.
+					isAppending = false;
+					cursor.moveToCurrentRow();
+				}
+				// isOnChange was flagged on 'replace' command.
+				if (isOnChange) {
+					cursor.updateRow();
+					isOnChange = false;
+				}
+				return true;
+			} else {
+				return false;
+			}
+		} catch (Exception e) {
+			System.out.println("SQL Error: " + e.getMessage());
+		}
+		return false;		
+	}
+	public boolean appendBlank() {
+		try {
+			if (cursor != null) {
+				cursor.moveToInsertRow();
+				isAppending = true;
+				return true;
+			} else {
+				return false;
+			}
+		} catch (Exception e) {
+			System.out.println("SQL Error: " + e.getMessage());
+		}
+		return false;
 	}
 	public Object findColumn(String columnName) {
 		try {
@@ -29,6 +82,10 @@ public class ObjTable extends Obj {
 	public int reccount() {
 		if (cursor != null) {
 			try {
+				if (isAppending) {
+					System.out.println("Invalid command in APPEND BLANK mode.");
+					return -1; 
+				}
 				int curRecno = cursor.getRow(); // save current row
 				int cursorSize = 0;
 				cursor.first();
@@ -47,6 +104,10 @@ public class ObjTable extends Obj {
 	public boolean goRecno(int recno) {
 		if (cursor != null) {
 			try {
+				if (isAppending) {
+					System.out.println("Invalid command in APPEND BLANK mode.");
+					return false; 
+				}
 				int total = reccount();
 				if (total < 0) {
 					System.out.println("Invalid cursor: reccount < 0");
@@ -66,6 +127,10 @@ public class ObjTable extends Obj {
 		return false;
 	}
 	public boolean requery(Connection activeConn) {
+		if (isAppending) {
+			System.out.println("Invalid command in APPEND BLANK mode.");
+			return false; 
+		}		
 		String query = "SELECT * FROM " + name;
 		if (noData) {
 			query += " WHERE 1 = 2 ";
@@ -76,7 +141,10 @@ public class ObjTable extends Obj {
 		try {
 			PreparedStatement prepareStmt = activeConn.prepareStatement(query, ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_UPDATABLE);
 			cursor = prepareStmt.executeQuery(query);
-			cursor.next();
+			if (!cursor.next()) {
+				System.out.println("SQL Error: Could not initialize the cursor");
+				return false;
+			}
 			return true;
 		} catch (Exception e) {
 			System.out.println("SQL Error: " + e.getMessage());

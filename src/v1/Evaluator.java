@@ -26,6 +26,7 @@ public class Evaluator {
 		builtins.put("alias", new ObjBuiltin(new BuiltinAlias()));
 		builtins.put("messagebox", new ObjBuiltin(new BuiltinMessagebox()));
 		builtins.put("reccount", new ObjBuiltin(new BuiltinReccount()));
+		builtins.put("tableupdate", new ObjBuiltin(new BuiltinTableUpdate()));
 	}
 	
 	public Obj Eval(Ast node, Environment env) {
@@ -87,7 +88,13 @@ public class Evaluator {
 			return evalExportConnection((AstExportConnection)node, env);
 		}
 		else if (node instanceof AstFunctionCall) {
-			return evalFunctionCall((AstFunctionCall) node, env);
+			return evalFunctionCall((AstFunctionCall) node, env);			
+		}
+		else if (node instanceof AstAppendBlank) {
+			return evalAppendBlank((AstAppendBlank)node, env);
+		}
+		else if (node instanceof AstReplace) {
+			return evalReplace((AstReplace) node, env);
 		}
 		return null;
 	}
@@ -105,6 +112,93 @@ public class Evaluator {
 			}
 		}
 		return result;
+	}
+	private Obj evalReplace(AstReplace replace, Environment env) {
+		// check for current connection
+		if (globalEnv.currentConnection == null) {
+			return new ObjError(MSG_CONNECTION_NOT_EXISTS);
+		}
+		// get the alias name
+		String aliasName = globalEnv.currentAlias;
+		if (replace.astAliasName != null) {
+			if (replace.astAliasName instanceof AstIdentifier) {
+				aliasName = ((AstIdentifier)replace.astAliasName).value;
+			} else {				
+				Obj objResult = Eval(replace.astAliasName, env);
+				if (isError(objResult)) {
+					return objResult;
+				}
+				if (objResult == null || objResult.type() != ObjType.STRING_OBJ) {
+					return new ObjError("Invalid type for Alias name");
+				}
+				aliasName = objResult.inspect();
+			}
+		}
+		if (aliasName.isEmpty()) {
+			return new ObjError("No table is open in the current work area");
+		}
+		// request for alias in work area
+		ObjTable objTable = globalEnv.workArea.get(aliasName);
+		if (objTable == null) {
+			return new ObjError("Alias '" + aliasName + "' is not found.");
+		}
+		
+		// check for valid field
+		String fieldName = "";
+		if (replace.astField instanceof AstIdentifier) {
+			fieldName = ((AstIdentifier)replace.astField).value;
+		} else {
+			Obj objResult = Eval(replace.astField, env);
+			if (isError(objResult)) {
+				return objResult;
+			}
+			if (objResult == null || objResult.type() != ObjType.STRING_OBJ) {
+				return new ObjError("Invalid type for field name");
+			}
+			fieldName = objResult.inspect();			
+		}
+		
+		// evaluate the field value
+		Obj fieldValue = Eval(replace.astFieldValue, env);
+		if (isError(fieldValue)) {
+			return fieldValue;
+		}
+		
+		// call the replace method
+		if (!objTable.replace(fieldName, fieldValue.inspect(), null)) {
+			return runTimeError();
+		}
+		return TRUE;
+	}
+	private Obj evalAppendBlank(AstAppendBlank appendBlank, Environment env) {
+		// check for current connection
+		if (globalEnv.currentConnection == null) {
+			return new ObjError(MSG_CONNECTION_NOT_EXISTS);
+		}
+		String aliasName = globalEnv.currentAlias;
+		if (appendBlank.aliasName != null) {
+			if (appendBlank.aliasName instanceof AstIdentifier) {
+				aliasName = ((AstIdentifier)appendBlank.aliasName).value;
+			} else {				
+				Obj objResult = Eval(appendBlank.aliasName, env);
+				if (isError(objResult)) {
+					return objResult;
+				}
+				if (objResult == null) {
+					return new ObjError("Invalid type for Alias name");
+				}
+				aliasName = objResult.inspect();
+			}
+		}
+		// request for alias in work area
+		ObjTable objTable = globalEnv.workArea.get(aliasName);
+		if (objTable == null) {
+			return new ObjError("Alias '" + aliasName + "' is not found.");
+		}
+		if (!objTable.appendBlank()) {
+			return new ObjError("Could not append a new record in alias '" + aliasName + "'");
+		}
+		return TRUE;
 	}
 	private Obj evalFunctionCall(AstFunctionCall astFunction, Environment env) {
 		// eval the name ast
@@ -249,10 +343,9 @@ public class Evaluator {
 	private Obj evalIdentifier(AstIdentifier ident, Environment env) {
 		// search in current alias in workarea
 		if (globalEnv.currentConnection != null && !globalEnv.currentAlias.isEmpty()) {
-			Obj objResult = globalEnv.workArea.get(globalEnv.currentAlias.toLowerCase());
-			if (objResult != null && objResult.type() == ObjType.TABLE_OBJ) {
+			ObjTable objTable = globalEnv.workArea.get(globalEnv.currentAlias.toLowerCase());
+			if (objTable != null && objTable.type() == ObjType.TABLE_OBJ) {
 				// search identifier in resultset columns
-				ObjTable objTable = (ObjTable)objResult;
 				Object result = objTable.findColumn(ident.value); 
 				if (result != null) {
 					return new ObjGeneric(result);
@@ -578,17 +671,19 @@ public class Evaluator {
 			return new ObjError("Alias '" + globalEnv.currentAlias + "' is not found.");
 		}
 		ObjTable objTable = (ObjTable)value;
-		
+		if (objTable.isAppending) {
+			return new ObjError("Invalid command in APPEND BLANK mode."); 
+		}		
 		String title = astBrowse.title.isEmpty() ? objTable.alias : astBrowse.title; 
 		// hit the browse
 		try {
-			BrowseWindow browse = new BrowseWindow(objTable.cursor, title);
+			new BrowseWindow(objTable.cursor, title);			
 			objTable.requery(globalEnv.currentConnection);
 		} catch (Exception e) {
 			return new ObjError("Runtime Error: " + e.getMessage());
 		}
 		
-		return NULL;
+		return TRUE;
 	}
 	private Obj evalUnary(AstUnary astUnary, Environment env) {
 		Obj rightObj = Eval(astUnary.right, env);

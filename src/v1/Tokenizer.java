@@ -49,7 +49,12 @@ public class Tokenizer {
 		keywords.put("EXPORT", TokenType.EXPORT);
 		keywords.put("FROM", TokenType.FROM);
 		keywords.put("FILE", TokenType.FILE);
-		
+		keywords.put("APPEND", TokenType.APPEND);
+		keywords.put("BLANK", TokenType.BLANK);
+		keywords.put("REPLACE", TokenType.REPLACE);
+		keywords.put("FOR", TokenType.FOR);
+		keywords.put("WHILE", TokenType.WHILE);
+		keywords.put("WITH", TokenType.WITH);		
 		// Single digit characters
 		singleChars = new HashMap<String, TokenType>();
 		singleChars.put(".", TokenType.DOT);

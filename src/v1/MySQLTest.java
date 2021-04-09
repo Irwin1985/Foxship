@@ -19,14 +19,49 @@ public class MySQLTest {
 			String query = "SELECT * FROM users";
 			
 			// create the java statement
-			Statement st = conn.createStatement();
+			PreparedStatement prepareStmt = conn.prepareStatement(query, ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_UPDATABLE);
 			
 			// execute the query, and get a java resultset
-			ResultSet rs = st.executeQuery(query);
+			ResultSet rs = prepareStmt.executeQuery(query);
+			String action = "update";
+			if (action.equals("insert")) {				
+				// SAVE RECNO AND APPEND BLANK
+				rs.moveToInsertRow();
+				// REPLACE
+				rs.updateString("first_name", "Pepe");
+				rs.updateString("last_name", "Aguilar");
+				// TABLEUPDATE
+				rs.insertRow();
+				
+				// GO RECNO
+				rs.moveToCurrentRow();
+			}
+			else if (action.equals("update")) {
+				// move to row 6
+				rs.absolute(6); 
+				// REPLACE ...
+				//rs.updateString("first_name", "Juliana");
+				rs.updateObject("first_name", "Peter");
+				rs.updateRow();
+				
+				rs.absolute(7);
+				//rs.updateString("first_name", "Mariana");
+				rs.updateObject("first_name", "Jacinta");
+				
+				// TABLE UPDATE
+				rs.updateRow();
+			}
+			else if (action.equals("delete")) {
+				// delete the last row
+				rs.last();
+				// detele
+				rs.deleteRow();
+			}
+			System.out.println("policia listo.");
 			//JTable table = new JTable(buildTableModel(rs));
 			//JTable table = new ResultSetTable(rs);
 			
-			BrowseWindow browse = new BrowseWindow();
+			//BrowseWindow browse = new BrowseWindow();
 			//browse.show(rs, "policia browse");
 			
 			// iterate through the java resultset
@@ -39,7 +74,7 @@ public class MySQLTest {
 			*/
 			//JOptionPane.showMessageDialog(null, new JScrollPane(table));
 			
-			rs.close();
+			//rs.close();
 		} catch(Exception e) {
 			System.out.println("MySQL Error: " + e);
 		}

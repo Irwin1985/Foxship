@@ -56,6 +56,12 @@ public class Parser {
 		else if (curToken.type == TokenType.EXPORT) {
 			statement = parseExportConnection();
 		}
+		else if (curToken.type == TokenType.APPEND) {
+			statement = parseAppendBlank();
+		}
+		else if (curToken.type == TokenType.REPLACE) {
+			statement = parseReplace();
+		}
 		else {
 			statement = parseExpression();
 		}
@@ -359,7 +365,41 @@ public class Parser {
 		match(TokenType.TO);
 		
 		return new AstExportConnection(parseExpression());
-	}	
+	}
+	private Ast parseAppendBlank() {
+		Ast aliasName = null;
+		
+		match(TokenType.APPEND);
+		match(TokenType.BLANK);
+		
+		if (curToken.type == TokenType.IN) {
+			match(TokenType.IN);
+			aliasName = parseExpression();
+		}
+
+		return new AstAppendBlank(aliasName);
+	}
+	private Ast parseReplace() {
+		AstReplace astReplace = new AstReplace();
+		
+		match(TokenType.REPLACE);		
+		astReplace.astField = parseExpression();
+		
+		match(TokenType.WITH);
+		astReplace.astFieldValue = parseExpression();
+		
+		if (curToken.type == TokenType.IN) {
+			match(TokenType.IN);
+			astReplace.astAliasName = parseExpression();
+		}
+		
+		if (curToken.type == TokenType.FOR || curToken.type == TokenType.WHILE) {
+			match(curToken.type);
+			astReplace.astCondition = parseExpression();
+		}
+		
+		return astReplace;
+	}
 	private void skipNewLine() {
 		if (curToken.type == TokenType.LBREAK) {
 			match(TokenType.LBREAK);
