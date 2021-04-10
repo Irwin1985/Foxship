@@ -173,6 +173,10 @@ public class Parser {
 					useTable.noUpdate = new AstBoolean(true);
 					continue;
 				}
+				else if (curToken.type == TokenType.FILTER) {
+					match(TokenType.FILTER);
+					useTable.filter = parseExpression();
+				}
 			}
 			// check for no alias (assume name)
 			if (useTable.alias == null) {
@@ -382,11 +386,26 @@ public class Parser {
 	private Ast parseReplace() {
 		AstReplace astReplace = new AstReplace();
 		
-		match(TokenType.REPLACE);		
-		astReplace.astField = parseExpression();
+		match(TokenType.REPLACE);
+		AstKeyValuePair astKvp = new AstKeyValuePair();
+		
+		astKvp.astField = parseExpression();		
 		
 		match(TokenType.WITH);
-		astReplace.astFieldValue = parseExpression();
+		astKvp.astFieldValue = parseExpression();
+		
+		astReplace.replacements.add(astKvp);
+		
+		while (curToken.type == TokenType.COMMA) {
+			match(TokenType.COMMA);
+			AstKeyValuePair innerAstKvp = new AstKeyValuePair();
+			innerAstKvp.astField = parseExpression();		
+			
+			match(TokenType.WITH);
+			innerAstKvp.astFieldValue = parseExpression();
+			
+			astReplace.replacements.add(innerAstKvp);			
+		}
 		
 		if (curToken.type == TokenType.IN) {
 			match(TokenType.IN);

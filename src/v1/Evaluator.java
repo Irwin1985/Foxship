@@ -145,29 +145,32 @@ public class Evaluator {
 		
 		// check for valid field
 		String fieldName = "";
-		if (replace.astField instanceof AstIdentifier) {
-			fieldName = ((AstIdentifier)replace.astField).value;
-		} else {
-			Obj objResult = Eval(replace.astField, env);
-			if (isError(objResult)) {
-				return objResult;
-			}
-			if (objResult == null || objResult.type() != ObjType.STRING_OBJ) {
-				return new ObjError("Invalid type for field name");
-			}
-			fieldName = objResult.inspect();			
-		}
 		
-		// evaluate the field value
-		Obj fieldValue = Eval(replace.astFieldValue, env);
-		if (isError(fieldValue)) {
-			return fieldValue;
-		}
-		
-		// call the replace method
-		if (!objTable.replace(fieldName, fieldValue.inspect(), null)) {
-			return runTimeError();
-		}
+		if (replace.replacements.size() > 0) {
+			// iterate each field and value pair.
+			for (AstKeyValuePair astKvp : replace.replacements) {
+				if (astKvp.astField instanceof AstIdentifier) {
+					fieldName = ((AstIdentifier)astKvp.astField).value;
+				} else {
+					Obj objResult = Eval(astKvp.astField, env);
+					if (isError(objResult)) {
+						return objResult;
+					}
+					if (objResult == null || objResult.type() != ObjType.STRING_OBJ) {
+						return new ObjError("Invalid type for field name");
+					}
+					fieldName = objResult.inspect();			
+				}
+				
+				// evaluate the field value
+				Obj fieldValue = Eval(astKvp.astFieldValue, env);
+				if (isError(fieldValue)) {
+					return fieldValue;
+				}
+				// call the replace method
+				objTable.replace(fieldName, fieldValue.inspect(), null);
+			}
+		}		
 		return TRUE;
 	}
 	private Obj evalAppendBlank(AstAppendBlank appendBlank, Environment env) {
@@ -396,7 +399,7 @@ public class Evaluator {
 			return runTimeError();
 		}
 
-		return NULL;		
+		return TRUE;		
 	}
 	private Obj evalUseTable(AstUseTable useTable, Environment env) {
 		// check for current connection
@@ -625,7 +628,7 @@ public class Evaluator {
 		// delete the current alias from global environment
 		globalEnv.currentAlias = "";
 		
-		return NULL;
+		return TRUE;
 	}
 
 	private Obj evalSelectTable(AstSelectTable astSel, Environment env) {
